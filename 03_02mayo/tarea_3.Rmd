@@ -1,0 +1,176 @@
+---
+output: pdf_document
+linestretch: 1.1
+header-includes:
+  - \usepackage{color}
+  - \usepackage[spanish]{babel}
+  - \usepackage[utf8]{inputenc}
+  - \usepackage{amsmath,amsfonts,amsthm}
+  - \usepackage[svgnames]{xcolor}
+  - \renewcommand{\familydefault}{\sfdefault}
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \lhead{Tarea 2}
+  - \chead{}
+  - \rhead{Sonia Mendizábal 105720}
+  - \lfoot{\thepage}
+  - \cfoot{}
+  - \rfoot{2 de mayo de 2018.} 
+---
+
+
+\definecolor{vio1}{HTML}{F9B9B6} 
+
+\newcommand\pregcol[1]{\textcolor{vio1}{ \textbf{#1} } }
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, 
+                      fig.height = 2.5, fig.width = 5, 
+                      fig.align = "center", fig.pos = 'h', 
+                      warning = FALSE, message = FALSE)
+library(tidyverse)
+library(ggfortify)
+theme_set(theme_minimal(base_size = 10))
+# Función para grafica acf y pacf ----
+acf_pacf_fun <- function(vec_ts, title_chr = "" ){
+  require(ggfortify)
+  require(gridExtra)
+  
+  gg.1 <- autoplot(acf(vec_ts, plot = F, lag = 30), main = "", ylab = "ACF")
+  gg.2 <- autoplot(pacf(vec_ts, plot = F, lag = 30), main = "", ylab = "Partial ACF")  
+  gridExtra::grid.arrange(gg.1, gg.2, ncol = 2, top = title_chr)
+}
+```
+
+
+
+# Tarea 3: Modelos de espacio de estados o modelos dinámicos lineales
+
+\pregcol{1. ¿Para qué sirven los modelos GARCH?}
+
+\pregcol{2. Simula una trayectoria de longitud 50 de un modelo $SARIMA(0,1,1)(0,1,1)_4$ con $\theta_1  = 0.7$, $\Theta = 0.6$ y $\sigma^2=4$.}
+
+El modelo $SARIMA(0,1,1)(0,1,1)_4$ define la siguiente serie diferenciada:
+
+$$
+Y_t = \big(1-B\big)\big(1-B^4\big)X_t = \big(1 - B- B^4 + B^5\big)X_t = X_t - X_{t-1} -X_{t-4} + X_{t-5}
+$$
+
+
+y el modelo ARMA: 
+$$
+\phi\big(B\big) \Phi\big(B^4\big) Y_t = \theta\big(B\big) \Theta\big(B^4\big) Z_t
+$$
+
+equivale a,
+$$
+Y_t =\big(1- \theta_1B\big)\big(1 + \Theta_1B^4\big)Z_t =\big(1- \theta_1B + \Theta_1B^4 - \theta_1\Theta_1B^5\big)Z_t = Z_t - \theta_1Z_{t-1} + \Theta_1Z_{t-4} - \theta_1\Theta_1Z_{t-5}. 
+$$
+
+Entonces,
+$$
+Y_t = X_t - X_{t-1} -X_{t-4} + X_{t-5}
+$$
+$$
+Y_t = Z_t - \theta_1Z_{t-1} + \Theta_1Z_{t-4} - \theta_1\Theta_1Z_{t-5} 
+$$
+
+se igualan ambas series,
+$$
+X_t - X_{t-1} -X_{t-4} + X_{t-5} = Z_t - \theta_1Z_{t-1} + \Theta_1Z_{t-4} - \theta_1\Theta_1Z_{t-5} 
+$$
+y se despeja $X_t$ tal que,
+$$
+X_t = X_{t-1}  + X_{t-4} -  X_{t-5} + Z_t - \theta_1Z_{t-1} + \Theta_1Z_{t-4} - \theta_1\Theta_1Z_{t-5} 
+$$
+y donde 
+$$
+Z_t \sim \texttt{RB}(0, 4).
+$$
+
+Entonces simulamos, 
+```{r}
+n_sims <- 50
+
+sigma2 <- 4
+theta1 <- 0.7
+Theta1 <- 0.6
+
+set.seed(10871002)
+z_vec <- rnorm(n_sims, mean = 0, sd = sqrt(sigma2))
+y_vec <- NULL
+x_vec <- NULL
+x_vec[1:5] <- z_vec[1:5]
+
+# Loop para generar el proceso 
+for(i in 6:n_sims){
+  x_vec[i] <- x_vec[i-1] + x_vec[i-4] - x_vec[i-5] + 
+    z_vec[i] - theta1*z_vec[i-1] + Theta1*z_vec[i-4] - 
+    theta1*Theta1*z_vec[i-5]
+}
+```
+
+
+```{r}
+tibble(n_sim = 1:n_sims, 
+       x_vec = x_vec) %>% 
+  ggplot( aes(x = n_sim, y = x_vec) ) + 
+  geom_line(size = .3) + 
+  ylab(expression(paste("Y"["t"]^{}) ) )  + 
+  xlab("tiempo") + 
+  ggtitle( expression( paste("Proceso SARIMA(0,1,1)(0,1,1)"[4]^{}) ))
+```
+
+
+
+
+\pregcol{- Grafica el ACF y PACF ¿Qué observas?}
+
+```{r}
+ts_vec <- ts(x_vec, start = 1, frequency = 4)
+acf_pacf_fun(ts_vec, title_chr = "Proceso SARIMA(0,1,1)(0,1,1)")
+```
+
+\pregcol{- Diferencía la serie de orden 1 y grafica el ACF y PACF ¿Qué observas?}
+
+```{r}
+vec_lag <- diff(x_vec, lag = 1) # y_vec - lag(y_vec) #
+ts_vec_lag <- ts(vec_lag, start = 2, frequency = 4)
+acf_pacf_fun(ts_vec_lag, title_chr = "Proceso Diferenciado 1 paso")
+```
+
+
+
+\pregcol{- Diferencía la serie diferenciada, ahora de orden 4, grafica el ACF y PACF ¿Qué observas?}
+
+
+```{r}
+vec_lag <- diff(x_vec, lag = 4) # y_vec - lag(y_vec) #
+ts_vec_lag4 <- ts(vec_lag, start = 4, frequency = 4)
+acf_pacf_fun(ts_vec_lag4, title_chr = "Proceso Diferenciado 4 pasos")
+```
+
+
+\pregcol{- Ajusta un modelo $SARIMA(0,1,1)(0,1,1)_4$. ¿Qué parámetros estima?}
+
+
+
+
+\pregcol{3. Escribe un programa para graficar 100 observaciones simuladas del DLM Gaussino con $A_t = 1$ y $F_t = 1$, comenzando con $x_0= 25$. Simula tres series para cada uno de los siguientes valores. ¿Puedes concluír algo de como influye la relación entre V y W al comportamiento de la serie?}
+
+
+\pregcol{V = 1 y W = 0.05}
+\pregcol{V = 1 y W = 0.5}
+\pregcol{V = 10 y W = 0.5}
+\pregcol{V = 10 y W = 5}
+
+
+\pregcol{4. Representación DLM de modelos ARIMA:}
+
+\pregcol{Comprueba la representación DLM de modelos $ARMA(p,q)$ para el caso en que $p=q=r$.}
+\pregcol{Escríbe la representación DLM de un $MA(2)$.}
+\pregcol{Escríbe la representación DLM de un $ARIMA(0,1,2)$. (Utiliza el punto anterior y la forma que desarrollamos en clase para unir dos modelos DLM).}
+
+
+
