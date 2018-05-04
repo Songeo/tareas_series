@@ -10,12 +10,12 @@ header-includes:
   - \renewcommand{\familydefault}{\sfdefault}
   - \usepackage{fancyhdr}
   - \pagestyle{fancy}
-  - \lhead{Tarea 2}
+  - \lhead{Tarea 3}
   - \chead{}
   - \rhead{Sonia Mendizábal 105720}
   - \lfoot{\thepage}
   - \cfoot{}
-  - \rfoot{2 de mayo de 2018.} 
+  - \rfoot{3 de mayo de 2018.} 
 ---
 
 
@@ -26,11 +26,13 @@ header-includes:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = T, 
-                      fig.height = 2.5, fig.width = 5, 
+                      fig.height = 2.3, fig.width = 5.3, 
                       fig.align = "center", fig.pos = 'h', 
                       warning = FALSE, message = FALSE)
 library(tidyverse)
 library(ggfortify)
+library(broom)
+
 theme_set(theme_minimal(base_size = 10))
 # Función para grafica acf y pacf ----
 acf_pacf_fun <- function(vec_ts, title_chr = "" ){
@@ -49,7 +51,11 @@ acf_pacf_fun <- function(vec_ts, title_chr = "" ){
 
 \pregcol{1. ¿Para qué sirven los modelos GARCH?}
 
-\pregcol{2. Simula una trayectoria de longitud 50 de un modelo $SARIMA(0,1,1)(0,1,1)_4$ con $\theta_1  = 0.7$, $\Theta = 0.6$ y $\sigma^2=4$.}
+Los modelos GARCH (Generalized AutoRegressive Conditional Heteroskedasticity) sirven para modelar
+ varianza en series de tiempo. Son útiles en series de tiempo con varianza cambiante en periodos de tiempo. De hecho surgen al intentar pronosticar la volatilidad financiera. Este tipo de series presentan periodos de gran volatilidad y periodos estables constantemente. En particular, este modelo expresa la varianza como un modelo ARMA para el ruido.
+
+
+\pregcol{2. Simula una trayectoria de longitud 50 de un modelo $SARIMA(0,1,1)(0,1,1)_4$ con $\theta_1 =$ 0.7, $\Theta =$ 0.6 y $\sigma^2 =$ 4.}
 
 El modelo $SARIMA(0,1,1)(0,1,1)_4$ define la siguiente serie diferenciada:
 
@@ -92,14 +98,12 @@ $$
 Entonces simulamos, 
 ```{r}
 n_sims <- 50
-
 sigma2 <- 4
 theta1 <- 0.7
 Theta1 <- 0.6
 
-set.seed(10871002)
+set.seed(20160502)
 z_vec <- rnorm(n_sims, mean = 0, sd = sqrt(sigma2))
-y_vec <- NULL
 x_vec <- NULL
 x_vec[1:5] <- z_vec[1:5]
 
@@ -109,10 +113,6 @@ for(i in 6:n_sims){
     z_vec[i] - theta1*z_vec[i-1] + Theta1*z_vec[i-4] - 
     theta1*Theta1*z_vec[i-5]
 }
-```
-
-
-```{r}
 tibble(n_sim = 1:n_sims, 
        x_vec = x_vec) %>% 
   ggplot( aes(x = n_sim, y = x_vec) ) + 
@@ -132,13 +132,18 @@ ts_vec <- ts(x_vec, start = 1, frequency = 4)
 acf_pacf_fun(ts_vec, title_chr = "Proceso SARIMA(0,1,1)(0,1,1)")
 ```
 
+En el ACF se observa que la correlación decae exponencialmente pero cada cuatro lags hay un pico. Se observa la estacionalidad de la serie cada cuatro pasos. En el PACF se observa que el cuarto retroceso es significativo. Esto se explica por la forma en que se simuló la serie y se observa la estacionalidad en ambas gráficas. 
+
+
 \pregcol{- Diferencía la serie de orden 1 y grafica el ACF y PACF ¿Qué observas?}
 
 ```{r}
-vec_lag <- diff(x_vec, lag = 1) # y_vec - lag(y_vec) #
+vec_lag <- diff(x_vec, lag = 1) 
 ts_vec_lag <- ts(vec_lag, start = 2, frequency = 4)
 acf_pacf_fun(ts_vec_lag, title_chr = "Proceso Diferenciado 1 paso")
 ```
+
+En este caso aunque se diferencía se sigue viendo el efecto de la estacionalidad incluido en la serie simulada en la gráfica de ACF. En el PACF se observa el salto pero en el lag 3 y 4, un lag antes que el inciso anterior sin diferenciar.  
 
 
 
@@ -146,31 +151,486 @@ acf_pacf_fun(ts_vec_lag, title_chr = "Proceso Diferenciado 1 paso")
 
 
 ```{r}
-vec_lag <- diff(x_vec, lag = 4) # y_vec - lag(y_vec) #
+vec_lag <- diff(x_vec, lag = 4)
 ts_vec_lag4 <- ts(vec_lag, start = 4, frequency = 4)
 acf_pacf_fun(ts_vec_lag4, title_chr = "Proceso Diferenciado 4 pasos")
 ```
 
 
+Se sigue viendo la caída del ACF ligeramente exponencial pero el pico que se observaba en los incisos anteriores cada cuatro lags ya no es tan marcado. En el PACF el pico de la cuarta observación es mucho menor y es el único valor significativo. 
+
+
+
 \pregcol{- Ajusta un modelo $SARIMA(0,1,1)(0,1,1)_4$. ¿Qué parámetros estima?}
 
 
+El modelo es el siguiente:
+```{r}
+sarima_mod <- arima(ts_vec,
+             order = c(0, 1, 1), 
+             seasonal = list( order = c(0,1,1), 
+                              freq = 4))
+```
 
 
-\pregcol{3. Escribe un programa para graficar 100 observaciones simuladas del DLM Gaussino con $A_t = 1$ y $F_t = 1$, comenzando con $x_0= 25$. Simula tres series para cada uno de los siguientes valores. ¿Puedes concluír algo de como influye la relación entre V y W al comportamiento de la serie?}
+Éste estima los coeficientes de medias móviles $\theta_1$ y el estacional $\Theta_1$ pero considerando la serie diferenciada a un paso. En la siguiente tabla se presentan las estimaciones:
+```{r}
+tidy(sarima_mod) %>% 
+  knitr::kable(digits = 2, align = "rccl")
+```
 
 
-\pregcol{V = 1 y W = 0.05}
-\pregcol{V = 1 y W = 0.5}
-\pregcol{V = 10 y W = 0.5}
-\pregcol{V = 10 y W = 5}
+
+Estos resultados son consistentes con el ACF de la serie diferenciada un paso. En la gráfica se observan rezagos negativos, lo que sugiere un parámetro negativo. También, el modelo estima la varianza talque $\sigma^2$ = `r round(sarima_mod$sigma2,2)`. Esto es consistente con la simulación.
+
+
+
+\pregcol{3. Escribe un programa para graficar 100 observaciones simuladas del DLM Gaussiano con $A_t = 1$ y $F_t = 1$, comenzando con $x_0= 25$. Simula tres series para cada uno de los siguientes valores. ¿Puedes concluir algo de como influye la relación entre V y W al comportamiento de la serie?}
+
+
+\pregcol{a. V = 1 y W = 0.05}
+\pregcol{b. V = 1 y W = 0.5}
+\pregcol{c. V = 10 y W = 0.5}
+\pregcol{d. V = 10 y W = 5}
+
+```{r}
+set.seed(20180501)
+# Función de simulación
+dlm_sim_fun <- function(V, W){
+  x_vec <- NULL; x_vec[1] <- 25
+  y_vec <- NULL; y_vec[1] <- x_vec[1]
+  
+  n_sims <- 100  
+  vt <- rnorm(n_sims, mean = 0, sd = sqrt(V))
+  wt <- rnorm(n_sims, mean = 0, sd = sqrt(W))
+  
+  for(i in 2:n_sims){
+    x_vec[i] <- x_vec[i - 1] + wt[i]
+    y_vec[i] <- x_vec[i] + vt[i]
+  }
+  return(y_vec)  
+}
+# Función de series simuladas
+dlm_series_fun <- function(V, W, tit = ""){
+  set.seed(20180501)
+  sim_tab <- lapply(1:3, function(x){
+    dlm_sim_fun( V = V,  W = W ) %>% 
+      as_tibble() %>% 
+      mutate(serie = as.character(x), 
+             tiempo = parse_number(rownames(.)))
+    }) %>% 
+    bind_rows() 
+  
+  gg <- ggplot(sim_tab, aes( x= tiempo, 
+                     y = value, 
+                     color = serie)) + 
+    geom_line() + 
+    ggtitle(paste("Ej", tit, "(V = ",V, "y W = ", W, ")"))
+  return(list(gg = gg, sim_tab = sim_tab))
+}
+# Simulaciones con distantas varianzas
+sim_a <- dlm_series_fun( V = 1,   W = .05, tit = "a." )
+sim_b <- dlm_series_fun( V = 1,   W = .5 , tit = "b." )
+sim_c <- dlm_series_fun( V = 10,  W = .5 , tit = "c." )
+sim_d <- dlm_series_fun( V = 10,  W = 5  , tit = "d." )
+```
+
+
+```{r, fig.width=10, fig.height=5}
+# Grafica
+gridExtra::grid.arrange(sim_a$gg, sim_b$gg, sim_c$gg, sim_d$gg, ncol = 2)
+```
+
+
+Se puede observar que las series generadas del ejercicio a y c son iguales. Así como las series b y d. Esto se debe a la proporción de las varianzas. En el primer caso es  $V/W =$ `r 1/.05` y en el segundo $V/W =$ `r 10/5`.
+
+
 
 
 \pregcol{4. Representación DLM de modelos ARIMA:}
 
-\pregcol{Comprueba la representación DLM de modelos $ARMA(p,q)$ para el caso en que $p=q=r$.}
-\pregcol{Escríbe la representación DLM de un $MA(2)$.}
-\pregcol{Escríbe la representación DLM de un $ARIMA(0,1,2)$. (Utiliza el punto anterior y la forma que desarrollamos en clase para unir dos modelos DLM).}
+
+\pregcol{Comprueba la representación DLM de modelos ARMA(p,q) para el caso en que $p=q=r$.}
+
+Se define un proceso ARMA(r,r) de la siguiente forma:
+$$
+X_t  = 
+\sum_{i = 1}^{m}\phi_{i}X_{t-i} +  \sum_{i = 1}^{m-1}\theta_{i}Z_{t-i} + Z_{t}
+$$
+donde $Z_t \sim \texttt{RB}(0, \sigma^2)$ y $m = max(r, r + 1) = r+1$.
+
+De tal forma que sea,
+$$
+A_t = \left( {\begin{array}{ccccc}
+   1 & 0  & \cdots  & 0  & 0 
+  \end{array} } \right)
+\; ,\;
+G_t = \left( {\begin{array}{cccccc}
+   \phi_1 & 1 & 0 & \cdots & 0 & 0 \\
+   \phi_2 & 0 & 1 & \cdots & 0 & 0 \\
+   \vdots & \vdots & \vdots & \ddots & \vdots & \vdots \\
+   \phi_{m-2} & 0 & 0 & \cdots & 1 & 0 \\
+   \phi_{m-1} & 0 & 0 & \cdots & 0 & 1 \\
+   \phi_{m}   & 0 & 0 & \cdots & 0 & 0 \\
+\end{array} } \right)  
+\; ,\;
+R = \left( {\begin{array}{c}
+   1 \\
+   \theta_1 \\
+   \vdots \\
+   \theta_{m-2} \\
+   \theta_{m-1} \\
+  \end{array} } \right)
+  \; ,\;
+k_t =  \left( {\begin{array}{c}
+   k_t^{(1)} \\
+   k_t^{(2)} \\
+   \vdots \\
+   k_t^{(m)} \\
+  \end{array} } \right)
+  \; ,\;
+$$
+se tiene la siguiente representación,
+$$
+{\begin{array}{rrcl}
+(i) & X_t & = & A_t k_t \\
+(ii) & k_{t+1} & = & G_t k_t + RZ_{t+1}\\
+\end{array} } 
+$$
+donde $W = RR^TZ_t$. 
+
+La primera ecuación $(i)$ si desarrollamos, 
+$$
+X_t = \left( {\begin{array}{ccccc}
+   1 & 0  & \cdots  & 0  & 0 
+  \end{array} } \right) \cdot
+  \left( {\begin{array}{c}
+   k_{t}^{(1)} \\
+   k_{t}^{(2)} \\
+   \vdots \\
+   k_{t}^{(m-1)} \\
+   k_{t}^{(m)} \\
+  \end{array} } \right) = k_{t}^{(1)}
+$$
+
+La segunda ecuación $(ii)$ al sustituir se ve de la siguiente forma,  
+$$
+ \left( {\begin{array}{c}
+   k_{t+1}^{(1)} \\
+   k_{t+1}^{(2)} \\
+   \vdots \\
+   k_{t+1}^{(m-1)} \\
+   k_{t+1}^{(m)} \\
+  \end{array} } \right) 
+  = 
+  \left( {\begin{array}{cccccc}
+   \phi_1 & 1 & 0 & \cdots & 0 & 0 \\
+   \phi_2 & 0 & 1 & \cdots & 0 & 0 \\
+   \vdots & \vdots & \vdots & \ddots & \vdots & \vdots \\
+   \phi_{m-1} & 0 & 0 & \cdots & 0 & 1 \\
+   \phi_{m}   & 0 & 0 & \cdots & 0 & 0 \\
+\end{array} } \right)  \cdot
+\left( {\begin{array}{c}
+   k_{t}^{(1)} \\
+   k_{t}^{(2)} \\
+   \vdots \\
+   k_{t}^{(m-1)} \\
+   k_{t}^{(m)} \\
+  \end{array} } \right)  + 
+  \left( {\begin{array}{c}
+   1 \\
+   \theta_1 \\
+   \vdots \\
+   \theta_{m-2} \\
+   \theta_{m-1} \\
+  \end{array} } \right) Z_{t+1}
+$$
 
 
+Al desarrollar, se obtienen las ecuaciones siguientes,
+$$
+{\begin{array}{rcl}
+   k_{t+1}^{(1)} &=& \phi_1 k_t^{(1)} +  k_t^{(2)} + Z_{t+1} \\
+   k_{t+1}^{(2)} &=& \phi_2 k_t^{(1)} +  k_t^{(3)} + \theta_{1}Z_{t+1} \\
+   k_{t+1}^{(3)} &=& \phi_3 k_t^{(1)} +  k_t^{(4)} + \theta_{2}Z_{t+1} \\
+    & \vdots& \\
+   k_{t+1}^{(m-1)} &=& \phi_{m-1} k_t^{(1)} +  k_t^{(m)} + \theta_{m-2}Z_{t+1} \\
+   k_{t+1}^{(m)} &=& \phi_{m} k_t^{(1)} +  \theta_{m-1}Z_{t+1} \\
+\end{array} }
+$$
+
+
+Entonces usando la primera ecuación del sistema para obtener $X_t = k_t^{(1)}$ se obtiene,
+$$
+k_{t}^{(1)} = \phi_1 k_{t-1}^{(1)} +  k_{t-1}^{(2)} + Z_{t}\;.
+$$
+Usando la segunda ecuación del sistema para $k_{t-1}^{(2)}$ se tiene que:
+$$
+k_{t-1}^{(2)} = \phi_2 k_{t-2}^{(1)} +  k_{t-2}^{(3)} + \theta_1Z_{t-1}\;.
+$$
+Lo mismo para $k_{t-2}^{(3)}$:
+$$
+k_{t-2}^{(3)} = \phi_3 k_{t-3}^{(1)} +  k_{t-3}^{(4)} + \theta_2Z_{t-2}\;.
+$$
+
+Así sucesivamente para $k_{t-(m-2)}^{(m-1)}$ 
+$$
+k_{t-(m-2)}^{(m-1)} = \phi_{m-1} k_{t-(m-1)}^{(1)} +  k_{t-(m-1)}^{(m)} + \theta_{m-2}Z_{t-(m-2)}
+$$
+
+y el último término será,
+$$
+k_{t-(m-1)}^{(m)} = \phi_{m} k_{t-m}^{(1)} +  \theta_{m-1}Z_{t-(m-1)}.
+$$
+
+
+De tal forma que si sustituimos consecutivamente en $k_{t}^{(1)}$:
+$$
+k_{t}^{(1)} = \phi_1 k_{t-1}^{(1)} +  \ldots + \phi_{m-1} k_{t-(m-1)}^{(1)} + \phi_{m} k_{t-m}^{(1)} +  \theta_1Z_{t-1} + \ldots +\theta_{m-2}Z_{t-(m-2)} + \theta_{m-1}Z_{t-(m-1)} +  Z_{t}
+$$
+y como $X_t = k_{t}^{(1)}$
+$$
+X_t = \phi_1 X_{t-1} +  \ldots + \phi_{m-1} X_{t-(m-1)} + \phi_{m} X_{t-m} +  \theta_1Z_{t-1} + \ldots +\theta_{m-2}Z_{t-(m-2)} + \theta_{m-1}Z_{t-(m-1)} +  Z_{t} 
+$$
+Esto es la definición del proceso ARMA(r, r) donde $m = r+1$,
+$$
+X_t = \sum_{i = 1}^{m}\phi_{i}X_{t-i} +  \sum_{i = 1}^{m-1}\theta_{i}Z_{t-i} + Z_{t} \;.
+$$
+Por lo tanto la representación funciona. 
+
+
+
+
+\pregcol{Escribe la representación DLM de un $MA(2)$.}
+
+Usando la definición del proceso ARMA(p,q) del inciso anterior donde $p = 0$ y $q = 2$, 
+entonces se define un proceso MA(2) donde $m = max(0, 2+1) = 3$ de la siguiente forma:
+$$
+X_t  =  \sum_{i = 1}^{2}\theta_{i}Z_{t-i} + Z_{t} = \theta_{1}Z_{t-1} + \theta_{2}Z_{t-2} + Z_{t}
+$$ 
+donde $\phi_i = 0$.
+
+De tal forma que sea,
+$$
+A_t = \left( {\begin{array}{ccc}
+   1 & 0 & 0
+  \end{array} } \right)
+\; ,\;
+G_t = \left( {\begin{array}{ccc}
+   0 & 1 & 0 \\
+   0 & 0 & 1 \\
+   0 & 0 & 0 \\
+\end{array} } \right)  
+\; ,\;
+R = \left( {\begin{array}{c}
+   1 \\
+   \theta_1 \\
+   \theta_{2} \\
+  \end{array} } \right)
+  \; ,\;
+k_t =  \left( {\begin{array}{c}
+   k_t^{(1)} \\
+   k_t^{(2)} \\
+   k_t^{(3)} \\
+  \end{array} } \right)
+  \; ,\;
+$$
+se tiene la siguiente representación,
+$$
+{\begin{array}{rrcl}
+(i) & X_t & = & A_t k_t \\
+(ii) & k_{t+1} & = & G_t k_t + RZ_{t+1}\\
+\end{array} } 
+$$
+Entonces, si desarrollamos la primera ecuación, 
+$$
+X_t = \left( {\begin{array}{ccc}
+   1 & 0 & 0
+  \end{array} } \right) \cdot \left( {\begin{array}{c}
+   k_t^{(1)} \\
+   k_t^{(2)} \\
+   k_t^{(3)} \\
+  \end{array} } \right) = k_t^{(1)}
+$$
+Y desarrollando la segunda ecuación,
+$$
+\left( {\begin{array}{c}
+   k_{t+1}^{(1)} \\
+   k_{t+1}^{(2)} \\
+   k_{t+1}^{(3)} \\
+  \end{array} } \right) 
+  = 
+  \left( {\begin{array}{ccc}
+   0 & 1 & 0 \\
+   0 & 0 & 1 \\
+   0 & 0 & 0 \\
+\end{array} } \right)    \cdot
+\left( {\begin{array}{c}
+   k_{t}^{(1)} \\
+   k_{t}^{(2)} \\
+   k_{t}^{(3)} \\
+  \end{array} } \right)  + 
+  \left( {\begin{array}{c}
+   1 \\
+   \theta_1 \\
+   \theta_{2} 
+  \end{array} } \right) Z_{t+1}
+$$
+
+se obtienen las siguientes ecuaciones, 
+$$
+{\begin{array}{rcl}
+   k_{t+1}^{(1)} &=& k_t^{(2)} + Z_{t+1} \\
+   k_{t+1}^{(2)} &=& k_t^{(3)} + \theta_{1}Z_{t+1} \\
+   k_{t+1}^{(3)} &=& k_t^{(4)} + \theta_{2}Z_{t+1} \\
+\end{array} }
+$$
+Sustituyendo en $k_{t}^{(1)}$,
+$$
+k_{t}^{(1)} = X_t =  \theta_1Z_{t-1}  + \theta_{2}Z_{t-2} +  Z_{t} \;.
+$$
+
+
+
+\pregcol{Escribe la representación DLM de un ARIMA(0,1,2). (Utiliza el punto anterior y la forma que desarrollamos en clase para unir dos modelos DLM).}
+
+Un modelo ARIMA(0,1,2) puede reescribirse como la combinación de un proceso ARIMA(0,0,2), que es el proceso MA(2) del inciso anterior, y un proceso ARIMA(0,1,0) que es una caminata aleatoria vista en clase. 
+
+Para el primer modelo ARIMA(0, 0, 2) que se desarrolló en el inciso anterior se sabe que, 
+$$
+A_1 = \left( {\begin{array}{ccc}
+   1 & 0 & 0
+  \end{array} } \right)
+\; ,\;
+G_1 = \left( {\begin{array}{ccc}
+   0 & 1 & 0 \\
+   0 & 0 & 1 \\
+   0 & 0 & 0 \\
+\end{array} } \right)  
+\; ,\;
+R = \left( {\begin{array}{c}
+   1 \\
+   \theta_1 \\
+   \theta_{2} \\
+  \end{array} } \right)
+  \; ,\;
+k_t =  \left( {\begin{array}{c}
+   k_t^{(1)} \\
+   k_t^{(2)} \\
+   k_t^{(3)} \\
+  \end{array} } \right)
+  \; ,\;
+$$
+
+donde
+$$
+{\begin{array}{rcl}
+   X_t^{(1)} & = & A_1k_{t}  \\
+   k_{t+1} & = & G_{1}k_{t} + RZ_{t+1}  \\
+  \end{array} }.
+$$
+
+
+El segundo modelo ARIMA(0,1,0) es una caminata aleatoria, por lo tanto,
+$$
+A_2 = 1\; ,\;
+G_2 = 1
+$$
+
+tal que,
+$$
+{\begin{array}{rcl}
+   Y_t^{(2)} & = & A_2X_{t}^{(2)} + v_t  \\
+   X_t^{(2)} & = & G_{2}X_{t-1}^{(2)} + w_t  \\
+  \end{array} }
+$$
+
+donde $v_t\sim \texttt{RB}(0, \sigma_{v}^2)$ y $w_t\sim \texttt{RB}(0, \sigma_{w}^2)$.
+
+Retomando lo visto en clase respecto la unión de dos modelos de espacio de estados, sea,
+$$
+{\begin{array}{ccccccc}
+Y_t^{(1)} &=& A_1 X_{t }^{(1)} + v_t^{(1)} &\quad y \quad& 
+Y_t^{(2)} &=& A_2 X_{t }^{(2)} + v_t^{(2)} \\
+X_t^{(1)} &=& G_1 X_{t-1}^{(1)} + w_t^{(1)} && 
+X_t^{(2)} &=& G_2 X_{t-1}^{(2)} + w_t^{(2)}\\
+\end{array} } 
+$$
+
+sabemos que,
+$$
+X_t = \left( {\begin{array}{c}
+   X_t^{(1)}  \\
+   X_t^{(2)}  \\
+  \end{array} } \right)
+  \;,\;
+A_t = \left( {\begin{array}{cc}
+   A_1 & 0  \\
+   0 & A_2  \\
+  \end{array} } \right)
+  \;,\;
+G_t = \left( {\begin{array}{cc}
+   G_1 & 0  \\
+   0 & G_2   \\
+  \end{array} } \right)
+  \;,\;
+v_t = \left( {\begin{array}{c}
+   v_t^{(1)}  \\
+   v_t^{(2)}  \\
+  \end{array} } \right)
+  \;,\;
+w_t = \left( {\begin{array}{c}
+   w_t^{(1)}  \\
+   w_t^{(2)}  \\
+  \end{array} } \right).
+$$
+
+
+Por lo tanto, 
+$$
+X_t = \left( {\begin{array}{c}
+   k_t^{(1)}  \\
+   X_t^{(2)}  \\
+  \end{array} } \right)
+  \;,\;
+A_t = \left( {\begin{array}{cccc}
+   0 & 1 & 0 & 0\\
+   0 & 0 & 0 & 1\\
+  \end{array} } \right)
+  \;,\;
+G_t = \left( {\begin{array}{cccc}
+   0 & 1 & 0 & 0\\
+   0 & 0 & 1 & 0\\
+   0 & 0 & 0 & 0\\
+   0 & 0 & 0 & 1\\
+  \end{array} } \right)
+  \;,\;
+V_t =  \left( {\begin{array}{c}
+   0 \\
+   v_t \\
+  \end{array} } \right)
+  \;,\; 
+W_t =  \left( {\begin{array}{c}
+   Z_{t+1} \\
+   \theta_1Z_{t+1} \\
+   \theta_{2}Z_{t+1} \\
+   w_t \\
+  \end{array} } \right).
+$$
+
+
+\subsection{Funciones}
+
+
+```{r, eval = F}
+# Función de gráfica ACF y PACF
+acf_pacf_fun <- function(vec_ts, title_chr = "" ){
+  require(ggfortify)
+  require(gridExtra)
+  
+  gg.1 <- autoplot(acf(vec_ts, plot = F, lag = 30), main = "", ylab = "ACF")
+  gg.2 <- autoplot(pacf(vec_ts, plot = F, lag = 30), main = "", ylab = "Partial ACF")  
+  gridExtra::grid.arrange(gg.1, gg.2, ncol = 2, top = title_chr)
+}
+```
 
